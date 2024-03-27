@@ -9,8 +9,8 @@ import java.util.Date
 data class Bar(
     @SerializedName("o") val open: Float,
     @SerializedName("c") val close: Float,
-    @SerializedName("h") val low: Float,
-    @SerializedName("l") val high: Float,
+    @SerializedName("l") val low: Float,
+    @SerializedName("h") val high: Float,
     @SerializedName("t") val time: Long
 ) {
 
