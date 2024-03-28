@@ -12,23 +12,35 @@ import kotlin.math.roundToInt
 data class TerminalState(
     val bars: List<Bar>,
     val visibleBarsCount: Int = 100,
-    val terminalWidth: Float = 0f,
-    val scrolledBy: Float = 0f
+    val terminalWidth: Float = 1f,
+    val scrolledBy: Float = 0f,
+    val terminalHeight: Float = 1f,
 ) {
 
-    //Эти поля не добавляем в конструктор, потому что их снаружи передавать не будем. Они зависят только от
-    //параметров которые есть в конструкторе.
-    //В конструктор отправляем все параметры, которые будем передавать снаружи
+    /*Эти поля не добавляем в конструктор, потому что их снаружи передавать не будем.
+    * Они зависят только от параметров которые есть в конструкторе.
+    * В конструктор отправляем все параметры, которые будем передавать снаружи*/
 
     val barWidth: Float
         get() = terminalWidth / visibleBarsCount
 
-    val visibleBars: List<Bar>
+    private val visibleBars: List<Bar>
         get() {
             val startIndex = (scrolledBy / barWidth).roundToInt().coerceAtLeast(0)
             val endIndex = (startIndex + visibleBarsCount).coerceAtMost(bars.size)
             return bars.subList(startIndex, endIndex)
         }
+
+    /*Используем не присваивание, а переопределение геттера.
+    * Если использовать присваивание "=", то значение присвоится в момент создания объекта.
+    * А нам нужно, что бы вызывался геттер всегда с актуальными значениями*/
+
+    val max: Float
+        get() = visibleBars.maxOf { it.high }
+    val min: Float
+        get() = visibleBars.minOf { it.low }
+    val pxPerPoint: Float
+        get() = terminalHeight / (max - min)
 
     companion object {
         //создали объект Saver, который говорит о том, как можно сохранить, и восстановить объект MutableState<TerminalState>
@@ -39,7 +51,8 @@ data class TerminalState(
                     terminalState.bars,
                     terminalState.visibleBarsCount,
                     terminalState.terminalWidth,
-                    terminalState.scrolledBy
+                    terminalState.scrolledBy,
+                    terminalState.terminalHeight
                 )
             },
             restore = {
@@ -47,7 +60,8 @@ data class TerminalState(
                     bars = it[0] as List<Bar>,
                     visibleBarsCount = it[1] as Int,
                     terminalWidth = it[2] as Float,
-                    scrolledBy = it[3] as Float
+                    scrolledBy = it[3] as Float,
+                    terminalHeight = it[4] as Float
                 )
                 mutableStateOf(terminalState)
             }
