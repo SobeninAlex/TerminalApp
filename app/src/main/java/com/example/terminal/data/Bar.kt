@@ -1,8 +1,9 @@
 package com.example.terminal.data
 
-import android.icu.util.Calendar
+
 import androidx.compose.runtime.Immutable
 import com.google.gson.annotations.SerializedName
+import java.util.Calendar
 import java.util.Date
 
 @Immutable

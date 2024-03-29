@@ -1,5 +1,7 @@
 package com.example.terminal.presentation
 
+import android.annotation.SuppressLint
+import android.icu.util.Calendar
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -35,13 +37,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.terminal.R
+import com.example.terminal.data.Bar
 import com.example.terminal.ui.theme.DarkBlue
 import com.example.terminal.ui.theme.Orange
+import java.util.Calendar.SHORT
+import java.util.Locale
 import kotlin.math.roundToInt
 
 private const val MIN_VISIBLE_BARS_COUNT = 20
 
 //Если один state зависит от другого, или других, то вместо mutableStateOf можно использовать derivedStateOf
+
 
 @Composable
 fun Terminal(
@@ -50,60 +56,59 @@ fun Terminal(
 
     val terminalViewModel = viewModel<TerminalViewModel>()
     val screenState = terminalViewModel.state.collectAsState()
-    val selectedTimeFrame = terminalViewModel.selectedTimeFrame.collectAsState(initial = TimeFrame.HOUR_1)
 
-        when (val currentState = screenState.value) {
+    when (val currentState = screenState.value) {
 
-            is TerminalScreenState.Initial -> {}
+        is TerminalScreenState.Initial -> {}
 
-            is TerminalScreenState.Loading -> {
-                Box(
-                    modifier = modifier
-                        .fillMaxSize()
-                        .background(color = Color.Black),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(
-                        color = DarkBlue
-                    )
-                }
-            }
-
-            is TerminalScreenState.Content -> {
-                val terminalState = rememberTerminalState(bars = currentState.barList)
-
-                Chart(
-                    modifier = modifier,
-                    terminalState = terminalState,
-                    onTerminalStateChanged = {
-                        terminalState.value = it
-                    }
+        is TerminalScreenState.Loading -> {
+            Box(
+                modifier = modifier
+                    .fillMaxSize()
+                    .background(color = Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = DarkBlue
                 )
-
-                currentState.barList.firstOrNull()?.let {
-                    Prices(
-                        modifier = modifier,
-                        terminalState = terminalState,
-                        lastPrice = it.close
-                    )
-                }
             }
         }
 
-        TimeFrames(
-            modifier = modifier,
-            selectedFrame = selectedTimeFrame,
-            onTimeFrameSelected = {
-                terminalViewModel.loadBarList(timeframe = it)
+        is TerminalScreenState.Content -> {
+            val terminalState = rememberTerminalState(bars = currentState.barList)
+
+            Chart(
+                modifier = modifier,
+                terminalState = terminalState,
+                onTerminalStateChanged = {
+                    terminalState.value = it
+                },
+                timeFrame = currentState.timeFrame
+            )
+
+            currentState.barList.firstOrNull()?.let {
+                Prices(
+                    modifier = modifier,
+                    terminalState = terminalState,
+                    lastPrice = it.close
+                )
             }
-        )
+            TimeFrames(
+                modifier = modifier,
+                selectedFrame = currentState.timeFrame,
+                onTimeFrameSelected = {
+                    terminalViewModel.loadBarList(timeframe = it)
+                }
+            )
+        }
+    }
 
 }
 
 @Composable
 private fun TimeFrames(
     modifier: Modifier = Modifier,
-    selectedFrame: State<TimeFrame>,
+    selectedFrame: TimeFrame,
     onTimeFrameSelected: (TimeFrame) -> Unit
 ) {
 
@@ -125,7 +130,7 @@ private fun TimeFrames(
                     TimeFrame.HOUR_1 -> R.string.timeframe_1_hour
                 }
 
-                val isSelected = selectedFrame.value == timeframe
+                val isSelected = selectedFrame == timeframe
                 AssistChip(
                     onClick = { onTimeFrameSelected(timeframe) },
                     label = {
@@ -145,7 +150,8 @@ private fun TimeFrames(
 private fun Chart(
     modifier: Modifier = Modifier,
     terminalState: State<TerminalState>,
-    onTerminalStateChanged: (TerminalState) -> Unit
+    onTerminalStateChanged: (TerminalState) -> Unit,
+    timeFrame: TimeFrame,
 ) {
     val currentState = terminalState.value
 
@@ -167,16 +173,18 @@ private fun Chart(
         )
     }
 
+    val textMeasurer = rememberTextMeasurer()
+
     Canvas(
         modifier = modifier
             .fillMaxSize()
             .background(color = Color.Black)
+            .clipToBounds()
             .padding(
                 top = 32.dp,
                 bottom = 32.dp,
                 end = 42.dp
             )
-            .clipToBounds()
             .transformable(transformableState)
             .onSizeChanged {
                 onTerminalStateChanged(
@@ -193,6 +201,17 @@ private fun Chart(
         translate(left = currentState.scrolledBy) {
             currentState.bars.forEachIndexed { index, bar ->
                 val offsetX = size.width - index * currentState.barWidth
+                drawTimeDelimiter(
+                    bar = bar,
+                    nextBar = if (index < currentState.bars.size - 1) {
+                        currentState.bars[index + 1]
+                    } else {
+                        null
+                    },
+                    timeFrame = timeFrame,
+                    offsetX = offsetX,
+                    textMeasurer = textMeasurer
+                )
                 drawLine(
                     color = Color.White,
                     start = Offset(offsetX, size.height - ((bar.low - min) * pxPerPoint)),
@@ -238,6 +257,72 @@ private fun Prices(
             textMeasurer = textMeasurer
         )
     }
+}
+
+private fun DrawScope.drawTimeDelimiter(
+    bar: Bar,
+    nextBar: Bar?,
+    timeFrame: TimeFrame,
+    offsetX: Float,
+    textMeasurer: TextMeasurer
+) {
+    val calendar = bar.calendar
+
+    val minutes = calendar.get(Calendar.MINUTE)
+    val hours = calendar.get(Calendar.HOUR_OF_DAY)
+    val day = calendar.get(Calendar.DAY_OF_MONTH)
+
+    val shouldDrawDelimiter = when(timeFrame) {
+        TimeFrame.MIN_5 -> {
+            minutes == 0
+        }
+        TimeFrame.MIN_15 -> {
+            minutes == 0 && hours % 2 == 0
+        }
+        TimeFrame.MIN_30, TimeFrame.HOUR_1 -> {
+            val nextBarDay = nextBar?.calendar?.get(Calendar.DAY_OF_MONTH)
+            day != nextBarDay
+        }
+    }
+
+    if (!shouldDrawDelimiter) return
+
+    drawLine(
+        color = Color.White.copy(alpha = 0.5f),
+        start = Offset(offsetX, 0f),
+        end = Offset(offsetX, size.height),
+        strokeWidth = 1f,
+        pathEffect = PathEffect.dashPathEffect(
+            intervals = floatArrayOf(
+                4.dp.toPx(), //ширина пунктирной линии
+                4.dp.toPx() //интервал между линиями
+            )
+        )
+    )
+
+    val nameOfMonth = calendar.getDisplayName(Calendar.MONTH, SHORT, Locale.getDefault())
+
+    val text = when(timeFrame) {
+        TimeFrame.MIN_5, TimeFrame.MIN_15 -> {
+            String.format("%02d:00", hours)
+        }
+        TimeFrame.MIN_30, TimeFrame.HOUR_1 -> {
+            String.format("%s %s", day, nameOfMonth)
+        }
+    }
+
+    val textLayoutResult = textMeasurer.measure(
+        text = text,
+        style = TextStyle(
+            color = Color.White,
+            fontSize = 12.sp
+        )
+    )
+
+    drawText(
+        textLayoutResult = textLayoutResult,
+        topLeft = Offset(x = offsetX - textLayoutResult.size.width / 2, y = size.height)
+    )
 }
 
 private fun DrawScope.drawPrices(

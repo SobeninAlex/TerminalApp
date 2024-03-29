@@ -24,9 +24,6 @@ class TerminalViewModel(
     private val _state = MutableStateFlow<TerminalScreenState>(TerminalScreenState.Initial)
     val state = _state.asStateFlow()
 
-    private val _selectedTimeFrame = MutableLiveData<TimeFrame>()
-    val selectedTimeFrame = _selectedTimeFrame.asFlow()
-
     private var lastState: TerminalScreenState = TerminalScreenState.Initial
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
@@ -40,10 +37,9 @@ class TerminalViewModel(
     fun loadBarList(timeframe: TimeFrame = TimeFrame.HOUR_1) {
         lastState = state.value
         _state.value = TerminalScreenState.Loading
-        _selectedTimeFrame.value = timeframe
         viewModelScope.launch(exceptionHandler) {
             val barList = apiService.loadBars(multiplier = timeframe.multiplier, timespan = timeframe.timespan).barList
-            _state.value = TerminalScreenState.Content(barList = barList)
+            _state.value = TerminalScreenState.Content(barList = barList, timeFrame = timeframe)
         }
     }
 
